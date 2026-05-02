@@ -1,0 +1,6 @@
+aws_region   = "eu-central-1"
+project_name = "home-assessment"
+environment  = "prod"
+
+# Must be globally unique in S3.
+bucket_name = "CHANGE_ME_UNIQUE_PROD_BUCKET"
