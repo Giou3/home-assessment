@@ -2,6 +2,8 @@
 
 DevOps home assessment: Terraform (AWS), containerized API, GitHub Actions.
 
+Assessment write-ups: [Part 1 CDN bugfixes](docs/terraform-bugfixes.md) · [Part 3 pipeline debug](docs/part3-pipeline-debug.md).
+
 ## Terraform quickstart
 
 Prerequisites:
@@ -49,7 +51,7 @@ Notes:
 
 Workflows live in `.github/workflows/`:
 
-- `ci.yml` — on pull requests, builds the `app/` Docker image. On pushes to `main`, assumes AWS via OIDC, logs in to ECR, and pushes `:<full-git-sha>` to the repository (default name `home-assessment-api`, immutable tags).
+- `ci.yml` — on pull requests, builds the `app/` Docker image. On pushes to `main`, assumes AWS via OIDC (fresh session in that job), logs in to ECR, builds from `./app`, runs **Trivy** (HIGH/CRITICAL, fail on findings), then tags and pushes `:<full-git-sha>` to ECR (default repo `home-assessment-api`, immutable tags).
 - `deploy.yml` — manual (`workflow_dispatch`). Picks a GitHub Environment (`staging` or `production`), assumes that environment’s deploy role, runs `scripts/ecs-deploy.sh` to register a new task definition with the chosen image tag, updates the ECS service, waits for stability, then curls `http://<ALB_DNS_NAME>/healthz`. If the health check fails, the script rolls the service back to the previous task definition.
 
 ### One-time GitHub configuration

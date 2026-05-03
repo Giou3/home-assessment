@@ -23,6 +23,8 @@ jobs:
       - name: Build container
         run: docker build -t home-assessment-api:ci ./app
 
+  # Staging-debug scenario: build from repo root misses app/Dockerfile; Trivy then has no local image.
+  # ECR login needs a current OIDC session in this job (tokens expire; other jobs don't share env).
   push-ecr:
     needs: [build-image]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -30,6 +32,9 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+      LOCAL_IMAGE: home-assessment-api:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,11 +48,20 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image
+      - name: Build image (local tag for Trivy)
+        run: docker build -t "${LOCAL_IMAGE}" ./app
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: "${{ env.LOCAL_IMAGE }}"
+          exit-code: "1"
+          severity: "HIGH,CRITICAL"
+
+      - name: Tag and push to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'home-assessment-api' }}
-          IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}" ./app
+          docker tag "${LOCAL_IMAGE}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
           docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
