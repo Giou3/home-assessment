@@ -2,7 +2,7 @@
 
 DevOps home assessment: Terraform (AWS), containerized API, GitHub Actions.
 
-Assessment write-ups: [Part 1 CDN bugfixes](docs/terraform-bugfixes.md) · [Part 3 pipeline debug](docs/part3-pipeline-debug.md).
+Assessment write-ups: [Part 1 — CDN bugs](docs/terraform-bugfixes.md) · [Part 3 — pipeline debug](docs/part3-pipeline-debug.md) · [Part 5 — observability](dashboards.md) · [Part 5 — security](SECURITY.md) · [Part 5 — cost](COST_NOTES.md).
 
 ## Terraform quickstart
 
@@ -62,6 +62,12 @@ Repository secret (used by `ci.yml` on `main`):
 | --- | --- |
 | `AWS_OIDC_ROLE_ARN` | IAM role ARN trusted for `repo:<org>/<repo>:ref:refs/heads/main` (for example the Terraform output `github_deploy_role_arn` from **one** stack that is allowed to push to the shared ECR repo). |
 
+Optional repository variable (cost guardrail — see `COST_NOTES.md`):
+
+| Variable | Purpose |
+| --- | --- |
+| `PAUSE_PROD_DEPLOYS` | Set to `true` to skip **production** deploy jobs in `deploy.yml` (staging still runs). Omit or use any other value to allow prod. |
+
 Per-environment configuration (Settings → Environments → `staging` / `production`):
 
 | Type | Name | Purpose |
@@ -82,7 +88,7 @@ Add a protection rule on the `production` environment (required reviewers) if yo
 
 1. Merge to `main` runs `ci.yml`: tests → image build → Trivy → ECR push with **SHA** and **semver** tags.
 2. Run **Deploy** with `image_tag` set to either tag from step 1 (SHA is safest for traceability).
-3. Use **`staging_then_production`** to enforce staging first; production runs only after the staging job succeeds (including `/healthz` when `ALB_DNS_NAME` is set). Use **`production`** only for break-glass. Configure **Environment protection rules** for human gates.
+3. Use **`staging_then_production`** to enforce staging first, production runs only after the staging job succeeds (including `/healthz` when `ALB_DNS_NAME` is set). Use **`production`** only for break-glass. Configure **Environment protection rules** for human gates.
 4. If `/healthz` fails after a deploy, `ecs-deploy.sh` **automatically** rolls ECS back to the previous task definition. For a manual revert later, use the `aws ecs update-service --task-definition …` one-liner in `deploy.yml` comments.
 
 ## Key Decisions

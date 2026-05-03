@@ -1,5 +1,9 @@
 # Deploy / promote images to ECS with GitHub Environment gates.
 #
+# --- Cost guardrail (see COST_NOTES.md) ---
+#   Repository variable PAUSE_PROD_DEPLOYS=true skips production jobs only (deploy-production,
+#   deploy-production-direct). Staging still deploys. Unset or set != true to allow prod again.
+#
 # --- Approvals (configure in repo Settings → Environments) ---
 #   staging:    optional required reviewers (e.g. team gate before any AWS change).
 #   production: recommended required reviewers (manual approval before prod ECS update).
@@ -82,7 +86,7 @@ jobs:
   # Second hop: only after staging succeeded. production Environment can require a second manual approval.
   deploy-production:
     needs: [deploy-staging]
-    if: github.event.inputs.pipeline == 'staging_then_production' && needs.deploy-staging.result == 'success'
+    if: github.event.inputs.pipeline == 'staging_then_production' && needs.deploy-staging.result == 'success' && vars.PAUSE_PROD_DEPLOYS != 'true'
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -121,7 +125,7 @@ jobs:
 
   # Break-glass: skip staging when you intentionally deploy straight to prod (still gated by production Environment).
   deploy-production-direct:
-    if: github.event.inputs.pipeline == 'production'
+    if: github.event.inputs.pipeline == 'production' && vars.PAUSE_PROD_DEPLOYS != 'true'
     runs-on: ubuntu-latest
     environment: production
     permissions:
