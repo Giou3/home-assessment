@@ -2,7 +2,7 @@
 
 DevOps home assessment: Terraform (AWS), containerized API, GitHub Actions.
 
-Assessment write-ups: [Part 1 — CDN bugs](docs/terraform-bugfixes.md) · [Part 3 — pipeline debug](docs/part3-pipeline-debug.md) · [Part 5 — observability](dashboards.md) · [Part 5 — security](SECURITY.md) · [Part 5 — cost](COST_NOTES.md).
+Assessment write-ups: [Part 1 — CDN bugs](docs/terraform-bugfixes.md) · [Part 3 — pipeline debug](docs/part3-pipeline-debug.md) · [Part 5 — observability](dashboards.md) · [Part 5 — security](SECURITY.md) · [Part 5 — cost](COST_NOTES.md) · [Part 6 — backups, DR, on-call](ON-CALL.md).
 
 ## Terraform quickstart
 
