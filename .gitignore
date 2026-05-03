@@ -16,3 +16,7 @@ terraform.tfvars
 
 # Local backend config (copy from backend.hcl.example)
 backend.hcl
+
+# Python
+__pycache__/
+*.py[cod]

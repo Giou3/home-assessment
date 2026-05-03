@@ -1,27 +1,50 @@
+# Deploy / promote images to ECS with GitHub Environment gates.
+#
+# --- Approvals (configure in repo Settings → Environments) ---
+#   staging:    optional required reviewers (e.g. team gate before any AWS change).
+#   production: recommended required reviewers (manual approval before prod ECS update).
+#
+# --- Health gate ---
+#   scripts/ecs-deploy.sh waits for ECS steady state, then curls http://$ALB_DNS_NAME/healthz (if set).
+#   On failure it rolls the ECS service back to the *previous task definition revision* (automatic).
+#
+# --- Rollback one-liner (manual, if you need to revert after a *successful* deploy) ---
+#   Previous revision ARN is the task definition the service ran before your deploy (from AWS console
+#   or `aws ecs describe-services`). Then:
+#     aws ecs update-service --cluster "$ECS_CLUSTER_NAME" --service "$ECS_SERVICE_NAME" \
+#       --task-definition "$PREVIOUS_TASK_DEF_ARN" --region "$AWS_REGION"
+#   Image URI is not stored in Terraform state in this repo; rollback is ECS revision, not terraform apply.
+
 name: Deploy
 
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: "GitHub Environment name (configure protection rules on production)"
+      image_tag:
+        description: "ECR tag from CI (full git SHA or semver tag e.g. 1.0.42)"
+        type: string
+        required: true
+      pipeline:
+        description: |
+          staging — staging only.
+          production — production only (break-glass; still uses production Environment approvals if configured).
+          staging_then_production — staging first; production runs only after staging job succeeds (includes /healthz gate).
         type: choice
         required: true
         options:
           - staging
           - production
-      image_tag:
-        description: "Image tag in ECR (use the git SHA produced by CI on main)"
-        type: string
-        required: true
+          - staging_then_production
 
 permissions:
   contents: read
 
 jobs:
-  ecs:
+  # First hop in the gated path: staging AWS account resources + staging GitHub Environment (optional approvers).
+  deploy-staging:
+    if: contains(fromJSON('["staging","staging_then_production"]'), inputs.pipeline)
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: staging
     permissions:
       id-token: write
       contents: read
@@ -43,7 +66,86 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy ECS service
+      - name: Deploy ECS (staging) + health gate + auto-rollback on failure
+        run: |
+          ECS_CONTAINER_NAME="${ECS_CONTAINER_NAME:-api}"
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ inputs.image_tag }}"
+          bash scripts/ecs-deploy.sh \
+            "${ECS_TASK_DEFINITION_FAMILY}" \
+            "${ECS_SERVICE_NAME}" \
+            "${ECS_CLUSTER_NAME}" \
+            "${IMAGE_URI}" \
+            "${AWS_REGION}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${ALB_DNS_NAME}"
+
+  # Second hop: only after staging succeeded. production Environment can require a second manual approval.
+  deploy-production:
+    needs: [deploy-staging]
+    if: github.event.inputs.pipeline == 'staging_then_production' && needs.deploy-staging.result == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'eu-central-1' }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'home-assessment-api' }}
+      ECS_CLUSTER_NAME: ${{ vars.ECS_CLUSTER_NAME }}
+      ECS_SERVICE_NAME: ${{ vars.ECS_SERVICE_NAME }}
+      ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+      ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+      ALB_DNS_NAME: ${{ vars.ALB_DNS_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy ECS (production) + health gate + auto-rollback on failure
+        run: |
+          ECS_CONTAINER_NAME="${ECS_CONTAINER_NAME:-api}"
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ inputs.image_tag }}"
+          bash scripts/ecs-deploy.sh \
+            "${ECS_TASK_DEFINITION_FAMILY}" \
+            "${ECS_SERVICE_NAME}" \
+            "${ECS_CLUSTER_NAME}" \
+            "${IMAGE_URI}" \
+            "${AWS_REGION}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${ALB_DNS_NAME}"
+
+  # Break-glass: skip staging when you intentionally deploy straight to prod (still gated by production Environment).
+  deploy-production-direct:
+    if: github.event.inputs.pipeline == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'eu-central-1' }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'home-assessment-api' }}
+      ECS_CLUSTER_NAME: ${{ vars.ECS_CLUSTER_NAME }}
+      ECS_SERVICE_NAME: ${{ vars.ECS_SERVICE_NAME }}
+      ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+      ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+      ALB_DNS_NAME: ${{ vars.ALB_DNS_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy ECS (production direct) + health gate + auto-rollback on failure
         run: |
           ECS_CONTAINER_NAME="${ECS_CONTAINER_NAME:-api}"
           IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ inputs.image_tag }}"

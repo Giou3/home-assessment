@@ -1,3 +1,13 @@
+# CI — Dev lane: test → build image → (main only) Trivy → push ECR with git SHA + semver tags.
+#
+# Gates:
+#   - Tests must pass before any image is built for publishing.
+#   - Trivy must pass (HIGH/CRITICAL) before tags are pushed (blocks bad images from the registry).
+#   - ECR push only runs on main (integration / “dev merged”); PRs stay read-only for AWS.
+#
+# Part 3 reminder: build context is ./app (Dockerfile is not at repo root). OIDC must be assumed
+# in the same job as ECR login so the token is still valid.
+
 name: CI
 
 on:
@@ -15,16 +25,31 @@ permissions:
   contents: read
 
 jobs:
-  build-image:
+  # --- Gate 1: fast feedback on application behaviour (/healthz contract) ---
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build container
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unit tests
+        working-directory: app
+        run: python -m unittest discover -v -s . -p "test_*.py"
+
+  # --- Gate 2: image must build (same Dockerfile as prod) ---
+  build-image:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build container (PR / dev validation)
         run: docker build -t home-assessment-api:ci ./app
 
-  # Staging-debug scenario: build from repo root misses app/Dockerfile; Trivy then has no local image.
-  # ECR login needs a current OIDC session in this job (tokens expire; other jobs don't share env).
+  # --- Gates 3–4: vulnerability scan + registry push (main only) ---
   push-ecr:
     needs: [build-image]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -33,7 +58,10 @@ jobs:
       id-token: write
       contents: read
     env:
-      IMAGE_TAG: ${{ github.sha }}
+      # Immutable tag 1: exact commit — ties a deploy to source.
+      IMAGE_TAG_SHA: ${{ github.sha }}
+      # Immutable tag 2: semver-style line — 1.0.<run> is unique per workflow run (suitable for ECR immutability).
+      IMAGE_TAG_SEMVER: 1.0.${{ github.run_number }}
       LOCAL_IMAGE: home-assessment-api:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -48,9 +76,10 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build image (local tag for Trivy)
+      - name: Build image for scan and push
         run: docker build -t "${LOCAL_IMAGE}" ./app
 
+      # Gate 3: block publish if the image has fixable HIGH/CRITICAL issues.
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@0.28.0
         with:
@@ -58,10 +87,15 @@ jobs:
           exit-code: "1"
           severity: "HIGH,CRITICAL"
 
-      - name: Tag and push to ECR
+      # Gate 4: two labels on the same digest (promotion can use either SHA or semver tag).
+      - name: Tag and push to ECR (SHA + semver)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'home-assessment-api' }}
         run: |
-          docker tag "${LOCAL_IMAGE}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker tag "${LOCAL_IMAGE}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG_SHA}"
+          docker tag "${LOCAL_IMAGE}" "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG_SEMVER}"
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG_SHA}"
+          docker push "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG_SEMVER}"
+          echo "Pushed ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG_SHA}"
+          echo "Pushed ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG_SEMVER}"

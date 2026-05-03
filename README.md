@@ -51,8 +51,8 @@ Notes:
 
 Workflows live in `.github/workflows/`:
 
-- `ci.yml` — on pull requests, builds the `app/` Docker image. On pushes to `main`, assumes AWS via OIDC (fresh session in that job), logs in to ECR, builds from `./app`, runs **Trivy** (HIGH/CRITICAL, fail on findings), then tags and pushes `:<full-git-sha>` to ECR (default repo `home-assessment-api`, immutable tags).
-- `deploy.yml` — manual (`workflow_dispatch`). Picks a GitHub Environment (`staging` or `production`), assumes that environment’s deploy role, runs `scripts/ecs-deploy.sh` to register a new task definition with the chosen image tag, updates the ECS service, waits for stability, then curls `http://<ALB_DNS_NAME>/healthz`. If the health check fails, the script rolls the service back to the previous task definition.
+- `ci.yml` — **Dev lane:** runs **unit tests** (`app/test_*.py`), builds the `app/` image on every PR; on **`main`** also runs **Trivy** (HIGH/CRITICAL) and pushes **two immutable tags** to ECR: `:<github.sha>` and `:1.0.<run_number>` (semver-style). AWS/OIDC only on `main`.
+- `deploy.yml` — manual **promotion** (`workflow_dispatch`). Choose `pipeline`: **staging** (staging only), **production** (prod only, break-glass), or **staging_then_production** (staging job, then prod only if staging succeeds — health check + ECS rollback are in `scripts/ecs-deploy.sh`). Each job uses the matching GitHub **Environment** so you can add **required reviewers** on `staging` and/or `production`. See the workflow file header for a **one-line ECS rollback** command if you need to revert after a good deploy.
 
 ### One-time GitHub configuration
 
@@ -78,11 +78,12 @@ Per-environment configuration (Settings → Environments → `staging` / `produc
 
 Add a protection rule on the `production` environment (required reviewers) if you want a manual approval before prod deploys.
 
-### How artifacts flow
+### How artifacts flow (Dev → staging → prod)
 
-1. A merge to `main` runs `ci.yml`, which produces a new **immutable** image tag in ECR (`:<github.sha>`).
-2. You run **Deploy** manually, choose `staging` or `production`, and paste that **same** git SHA as `image_tag`.
-3. The workflow updates only the ECS task’s container image for that environment, validates `/healthz` through the ALB when `ALB_DNS_NAME` is set, and rolls back the service to the previous task definition if that check fails.
+1. Merge to `main` runs `ci.yml`: tests → image build → Trivy → ECR push with **SHA** and **semver** tags.
+2. Run **Deploy** with `image_tag` set to either tag from step 1 (SHA is safest for traceability).
+3. Use **`staging_then_production`** to enforce staging first; production runs only after the staging job succeeds (including `/healthz` when `ALB_DNS_NAME` is set). Use **`production`** only for break-glass. Configure **Environment protection rules** for human gates.
+4. If `/healthz` fails after a deploy, `ecs-deploy.sh` **automatically** rolls ECS back to the previous task definition. For a manual revert later, use the `aws ecs update-service --task-definition …` one-liner in `deploy.yml` comments.
 
 ## Key Decisions
 
