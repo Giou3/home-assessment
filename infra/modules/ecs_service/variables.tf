@@ -1,6 +1,7 @@
-variable "service_name" {
+variable "aws_region" {
   type = string
 }
+
 variable "cluster_name" {
   type = string
 }
@@ -28,21 +29,24 @@ variable "desired_count" {
 }
 
 variable "task_cpu" {
-  type    = number
-  default = 256
+  type = number
 }
 
 variable "task_memory" {
-  type    = number
-  default = 512
+  type = number
 }
 
-variable "public_subnet_ids" {
+variable "subnet_ids" {
   type = list(string)
 }
 
-variable "ecs_security_group_id" {
-  type = string
+variable "ecs_security_group_ids" {
+  type = list(string)
+}
+
+variable "assign_public_ip" {
+  type    = bool
+  default = true
 }
 
 variable "target_group_arn" {
@@ -57,6 +61,7 @@ variable "task_role_arn" {
   type = string
 }
 
-variable "aws_region" {
-  type = string
+variable "log_retention_days" {
+  type    = number
+  default = 14
 }

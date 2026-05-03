@@ -1,0 +1,57 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "GitHub Environment name (configure protection rules on production)"
+        type: choice
+        required: true
+        options:
+          - staging
+          - production
+      image_tag:
+        description: "Image tag in ECR (use the git SHA produced by CI on main)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  ecs:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'eu-central-1' }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'home-assessment-api' }}
+      ECS_CLUSTER_NAME: ${{ vars.ECS_CLUSTER_NAME }}
+      ECS_SERVICE_NAME: ${{ vars.ECS_SERVICE_NAME }}
+      ECS_TASK_DEFINITION_FAMILY: ${{ vars.ECS_TASK_DEFINITION_FAMILY }}
+      ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME }}
+      ALB_DNS_NAME: ${{ vars.ALB_DNS_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy ECS service
+        run: |
+          ECS_CONTAINER_NAME="${ECS_CONTAINER_NAME:-api}"
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${{ inputs.image_tag }}"
+          bash scripts/ecs-deploy.sh \
+            "${ECS_TASK_DEFINITION_FAMILY}" \
+            "${ECS_SERVICE_NAME}" \
+            "${ECS_CLUSTER_NAME}" \
+            "${IMAGE_URI}" \
+            "${AWS_REGION}" \
+            "${ECS_CONTAINER_NAME}" \
+            "${ALB_DNS_NAME}"

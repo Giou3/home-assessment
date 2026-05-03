@@ -72,4 +72,6 @@ resource "aws_cloudfront_distribution" "cdn" {
   }
 
   enabled = true
+
+  web_acl_id = var.web_acl_id
 }

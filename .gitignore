@@ -1,5 +1,4 @@
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 crash.log
@@ -10,3 +9,10 @@ override.tf.json
 *_override.tf.json
 .terraformrc
 terraform.rc
+
+# Local Terraform variable files (may contain sensitive values)
+terraform.tfvars
+*.auto.tfvars
+
+# Local backend config (copy from backend.hcl.example)
+backend.hcl

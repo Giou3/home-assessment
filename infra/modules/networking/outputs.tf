@@ -1,6 +1,3 @@
-output "networking_module_ready" {
-  value = true
-}
 output "vpc_id" {
   value = aws_vpc.this.id
 }

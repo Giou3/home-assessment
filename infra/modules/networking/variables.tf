@@ -1,8 +1,6 @@
 variable "name_prefix" {
-  type = string
-}
-variable "name_prefix" {
-  type = string
+  type        = string
+  description = "Prefix used for resource Name tags."
 }
 
 variable "vpc_cidr" {
@@ -10,11 +8,13 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  type = list(string)
+  type        = list(string)
+  description = "One CIDR per AZ; length must match az_count."
 }
 
-variable "availability_zones" {
-  type = list(string)
+variable "az_count" {
+  type    = number
+  default = 2
 }
 
 variable "app_port" {
