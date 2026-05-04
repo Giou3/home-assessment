@@ -2,7 +2,7 @@
 
 DevOps home assessment: Terraform (AWS), containerized API, GitHub Actions.
 
-Assessment write-ups: [Part 1 — CDN bugs](docs/terraform-bugfixes.md) · [Part 3 — pipeline debug](docs/part3-pipeline-debug.md) · [Part 5 — observability](dashboards.md) · [Part 5 — security](SECURITY.md) · [Part 5 — cost](COST_NOTES.md) · [Part 6 — backups, DR, on-call](ON-CALL.md).
+Assessment write-ups: [Part 1 — CDN bugs](docs/terraform-bugfixes.md) · [Part 3 — pipeline debug](docs/part3-pipeline-debug.md) · [Part 5 — observability](dashboards.md) · [Part 5 — security](SECURITY.md) · [Part 5 — cost](COST_NOTES.md) · [Part 6 — backups, DR, on-call](ON-CALL.md) · [Optional — technical Q&A (+20 pts)](docs/optional-technical-questions.md).
 
 ## Terraform quickstart
 
@@ -129,3 +129,10 @@ Tradeoffs:
 
 - RDS is stubbed via variables only (`rds_engine`, `rds_instance_class`) and is not provisioned.
 - Next step to make this production-grade: add RDS/Secrets Manager, migrate S3 access from OAI to OAC, add TLS on ALB, and tighten IAM policies beyond the assessment defaults.
+
+## Scope limits / intentional stubs
+
+- RDS is intentionally stubbed (variables only) to keep the assessment focused on app delivery, edge, IAM, and CI/CD flows.
+- Secrets Manager usage is documented as the next step, but no live app secret is wired yet because the demo service has no database dependency in this submission.
+- CloudFront enforces HTTPS for static content; ALB TLS (`443` listener + `80 -> 443` redirect) is documented as a production hardening follow-up.
+- WAF is enabled in production with managed rules; no explicit per-rule exclusions are configured yet because no false-positive tuning data is available in this assessment.
